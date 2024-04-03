@@ -88,11 +88,8 @@ struct Entrypoint {
             )
             
             let encoder = JSONEncoder()
-
             let data = try encoder.encode(input)
             let buffer = ByteBuffer(bytes: data)
-            
-            // let buffer = try encoder.encodeAsByteBuffer(input, allocator: .init())
             request.body = .bytes(buffer)
             
             let response = try await httpClient.execute(
@@ -110,9 +107,10 @@ struct Entrypoint {
                     }
                     
                     let decoder = JSONDecoder()
-                    let output = try decoder.decode(Output.self, from: buffer)
-                    
-                    print(output.json.title)
+                    if let data = buffer.getData(at: 0, length: buffer.readableBytes) {
+                        let output = try decoder.decode(Output.self, from: data)
+                        print(output.json.title)
+                    }
                 }
 
             }

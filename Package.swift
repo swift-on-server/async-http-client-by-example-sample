@@ -7,7 +7,7 @@ let package = Package(
         .macOS(.v14),
     ],
     dependencies: [
-        .package(url: "https://github.com/swift-server/async-http-client.git", from: "1.9.0")
+        .package(url: "https://github.com/swift-server/async-http-client.git", from: "1.21.0")
     ],
     targets: [
         .executableTarget(

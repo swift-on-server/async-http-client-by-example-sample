@@ -9,52 +9,37 @@ struct Entrypoint {
         try await example2()
         try await example3()
     }
-    
+
     // MARK: -
 
     static func example1() async throws {
-
-        let httpClient = HTTPClient(
-            eventLoopGroupProvider: .singleton
-        )
         
-        do {
-            var request = HTTPClientRequest(
-                url: "https://httpbin.org/post"
-            )
-            request.method = .POST
-            request.headers.add(name: "User-Agent", value: "Swift AsyncHTTPClient")
-            request.body = .bytes(ByteBuffer(string: "Some data"))
-            
-            let response = try await httpClient.execute(
-                request,
-                timeout: .seconds(5)
-            )
-            
-            if response.status == .ok {
-                let contentType = response.headers.first(
-                    name: "content-type"
-                )
-                print("\(contentType ?? "")")
+        var request = HTTPClientRequest(url: "https://httpbin.org/post")
+        request.method = .POST
+        request.headers.add(name: "User-Agent", value: "Swift AsyncHTTPClient")
+        request.body = .bytes(ByteBuffer(string: "Some data"))
+        
+        let response = try await HTTPClient.shared.execute(
+            request,
+            timeout: .seconds(5)
+        )
 
-                let contentLength = response.headers.first(
-                    name: "content-length"
-                ).flatMap(Int.init)
-                print("\(contentLength ?? -1)")
-
-                let buffer = try await response.body.collect(upTo: 1024 * 1024)
-                let rawResponseBody = buffer.getString(
-                    at: 0,
-                    length: buffer.readableBytes
-                )
-                print("\(rawResponseBody ?? "")")
-            }
+        guard response.status == .ok else {
+            print("Invalid status code: \(response.status)")
+            return
         }
-        catch {
-            print("\(error)")
-        }
+        let contentType = response.headers.first(name: "content-type")
+        print("\(contentType ?? "")")
 
-        try await httpClient.shutdown()
+        let contentLength = response.headers.first(
+            name: "content-length"
+        ).flatMap(Int.init)
+
+        print("\(contentLength ?? -1)")
+
+        let buffer = try await response.body.collect(upTo: 1024 * 1024)
+        let rawResponseBody = String(buffer: buffer)
+        print("\(rawResponseBody)")
     }
     
     // MARK: -
@@ -71,94 +56,73 @@ struct Entrypoint {
             let json: Input
         }
 
-        let httpClient = HTTPClient(
-            eventLoopGroupProvider: .singleton
+        var request = HTTPClientRequest(url: "https://httpbin.org/post")
+        request.method = .POST
+        request.headers.add(name: "content-type", value: "application/json")
+        
+        let input = Input(
+            id: 1,
+            title: "foo",
+            completed: false
         )
-        do {
-            var request = HTTPClientRequest(
-                url: "https://httpbin.org/post"
-            )
-            request.method = .POST
-            request.headers.add(name: "content-type", value: "application/json")
-            
-            let input = Input(
-                id: 1,
-                title: "foo",
-                completed: false
-            )
-            
-            let encoder = JSONEncoder()
-            let data = try encoder.encode(input)
-            let buffer = ByteBuffer(bytes: data)
-            request.body = .bytes(buffer)
-            
-            let response = try await httpClient.execute(
-                request,
-                timeout: .seconds(5)
-            )
-            
-            if response.status == .ok {
-                if let contentType = response.headers.first(
-                    name: "content-type"
-                ), contentType.contains("application/json") {
-                    var buffer: ByteBuffer = .init()
-                    for try await var chunk in response.body {
-                        buffer.writeBuffer(&chunk)
-                    }
-                    
-                    let decoder = JSONDecoder()
-                    if let data = buffer.getData(at: 0, length: buffer.readableBytes) {
-                        let output = try decoder.decode(Output.self, from: data)
-                        print(output.json.title)
-                    }
-                }
-
-            }
-            else {
-                print("Invalid status code: \(response.status)")
-            }
+        
+        let encoder = JSONEncoder()
+        let data = try encoder.encode(input)
+        request.body = .bytes(.init(bytes: data))
+        
+        let response = try await HTTPClient.shared.execute(
+            request,
+            timeout: .seconds(5)
+        )
+        
+        guard response.status == .ok else {
+            print("Invalid status code: \(response.status)")
+            return
         }
-        catch {
-            print("\(error)")
+        guard
+            let contentType = response.headers.first(name: "content-type"),
+            contentType.contains("application/json")
+        else {
+            print("Invalid content type.")
+            return
+        }
+
+        var buffer: ByteBuffer = .init()
+        for try await var chunk in response.body {
+            buffer.writeBuffer(&chunk)
         }
         
-        try await httpClient.shutdown()
+        let decoder = JSONDecoder()
+        let output = try decoder.decode(Output.self, from: buffer)
+        print(output.json.title)
     }
     
     // MARK: -
     
     static func example3() async throws {
         
-        let httpClient = HTTPClient(
-            eventLoopGroupProvider: .singleton
+        let delegate = try FileDownloadDelegate(
+            path: NSTemporaryDirectory() + "600x400.png",
+            reportProgress: {
+                if let totalBytes = $0.totalBytes {
+                    print("Total: \(totalBytes).")
+                }
+                print("Downloaded: \($0.receivedBytes).")
+            }
         )
 
-        do {
-            let delegate = try FileDownloadDelegate(
-                path: NSTemporaryDirectory() + "600x400.png",
-                reportProgress: {
-                    if let totalBytes = $0.totalBytes {
-                        print("Total: \(totalBytes).")
-                    }
-                    print("Downloaded: \($0.receivedBytes).")
-                }
-            )
-            
-            let fileDownloadResponse = try await httpClient.execute(
-                request: .init(
-                    url: "https://placehold.co/600x400.png"
-                ),
-                delegate: delegate
-            ).futureResult.get()
-            
-            print(fileDownloadResponse)
-        }
-        catch {
-            print("\(error)")
-        }
+        let fileDownloadResponse = try await HTTPClient.shared.execute(
+            request: .init(url: "https://placehold.co/600x400.png"),
+            delegate: delegate
+        ).futureResult.get()
         
-        try await httpClient.shutdown()
+        print(fileDownloadResponse)
     }
 }
 
-try await Entrypoint.main()
+do {
+    try await Entrypoint.main()
+}
+catch {
+    fatalError("\(error)")
+}
